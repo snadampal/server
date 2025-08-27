@@ -642,13 +642,25 @@ def python_cmake_args():
 
 
 def pytorch_cmake_args(images):
-    if "pytorch" in images:
-        image = images["pytorch"]
+    cargs = []
+    if FLAGS.enable_gpu:
+        if "pytorch" in images:
+            image = images["pytorch"]
+        else:
+            image = "nvcr.io/nvidia/pytorch:{}-py3".format(FLAGS.upstream_container_version)
+        cargs = [
+            cmake_backend_arg("pytorch", "TRITON_PYTORCH_DOCKER_IMAGE", None, image),
+        ]
     else:
-        image = "nvcr.io/nvidia/pytorch:{}-py3".format(FLAGS.upstream_container_version)
-    cargs = [
-        cmake_backend_arg("pytorch", "TRITON_PYTORCH_DOCKER_IMAGE", None, image),
-    ]
+        cargs = [
+            cmake_backend_arg("pytorch", "TRITON_PYTORCH_INCLUDE_PATHS", None, "/torch_wheel/torch/include/"),
+        ]
+        cargs.append (
+            cmake_backend_arg("pytorch", "TRITON_PYTORCH_LIB_PATHS", None, "/torch_wheel/torch/lib/")
+            )
+        cargs.append (
+            cmake_backend_arg("pytorch", "TRITON_PYTORCH_ENABLE_TORCHVISION", None, False)
+            )
 
     # TODO: TPRD-372 TorchTRT extension is not currently supported by our manylinux build
     # TODO: TPRD-373 NVTX extension is not currently supported by our manylinux build
@@ -1110,6 +1122,9 @@ RUN pip3 install --upgrade \\
           patchelf==0.17.2 \\
           cmake==4.0.3
 
+# Install torch 2.8.0
+RUN pip3 install --no-cache-dir --pre torch -f https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_aarch64.whl --target /torch_wheel/
+
 # Install boost version >= 1.78 for boost::span
 # Current libboost-dev apt packages are < 1.78, so install from tar.gz
 RUN wget -O /tmp/boost.tar.gz \\
@@ -1257,10 +1272,10 @@ COPY --chown=1000:1000 docker/sagemaker/serve /usr/bin/.
 """
     # This is required since libcublasLt.so is not present during the build
     # stage of the PyTorch backend
-    if not FLAGS.enable_gpu and ("pytorch" in backends):
-        df += """
-RUN patchelf --add-needed /usr/local/cuda/lib64/stubs/libcublasLt.so.13 backends/pytorch/libtorch_cuda.so
-"""
+ #   if not FLAGS.enable_gpu and ("pytorch" in backends):
+  #      df += """
+#RUN patchelf --add-needed /usr/local/cuda/lib64/stubs/libcublasLt.so.13 backends/pytorch/libtorch_cuda.so
+#"""
     if "tensorrtllm" in backends:
         df += """
 # Install required packages for TRT-LLM models
@@ -1561,21 +1576,21 @@ COPY --from=min_container /usr/local/cuda/lib64/stubs/libcublas.so /usr/local/cu
 COPY --from=min_container /usr/local/cuda/lib64/stubs/libcublasLt.so /usr/local/cuda/lib64/stubs/libcublasLt.so.13
 
 RUN mkdir -p /usr/local/cuda/targets/{cuda_arch}-linux/lib
-COPY --from=min_container /usr/local/cuda/lib64/libcudart.so.13 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
-COPY --from=min_container /usr/local/cuda/lib64/libcupti.so.13 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
-COPY --from=min_container /usr/local/cuda/lib64/libnvJitLink.so.13 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
-COPY --from=min_container /usr/local/cuda/lib64/libcufile.so.0 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
-COPY --from=min_container /usr/local/cuda/lib64/libnvrtc.so.13 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
-COPY --from=min_container /usr/local/cuda/lib64/libcusparseLt.so.0 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
+#COPY --from=min_container /usr/local/cuda/lib64/libcudart.so.13 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
+#COPY --from=min_container /usr/local/cuda/lib64/libcupti.so.13 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
+#COPY --from=min_container /usr/local/cuda/lib64/libnvJitLink.so.13 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
+#COPY --from=min_container /usr/local/cuda/lib64/libcufile.so.0 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
+#COPY --from=min_container /usr/local/cuda/lib64/libnvrtc.so.13 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
+#COPY --from=min_container /usr/local/cuda/lib64/libcusparseLt.so.0 /usr/local/cuda/targets/{cuda_arch}-linux/lib/.
 
 RUN mkdir -p /opt/hpcx/ucc/lib/ /opt/hpcx/ucx/lib/
-COPY --from=min_container /opt/hpcx/ucc/lib/libucc.so.1 /opt/hpcx/ucc/lib/libucc.so.1
-COPY --from=min_container /opt/hpcx/ucx/lib/libucm.so.0 /opt/hpcx/ucx/lib/libucm.so.0
-COPY --from=min_container /opt/hpcx/ucx/lib/libucp.so.0 /opt/hpcx/ucx/lib/libucp.so.0
-COPY --from=min_container /opt/hpcx/ucx/lib/libucs.so.0 /opt/hpcx/ucx/lib/libucs.so.0
-COPY --from=min_container /opt/hpcx/ucx/lib/libuct.so.0 /opt/hpcx/ucx/lib/libuct.so.0
+#COPY --from=min_container /opt/hpcx/ucc/lib/libucc.so.1 /opt/hpcx/ucc/lib/libucc.so.1
+#COPY --from=min_container /opt/hpcx/ucx/lib/libucm.so.0 /opt/hpcx/ucx/lib/libucm.so.0
+#COPY --from=min_container /opt/hpcx/ucx/lib/libucp.so.0 /opt/hpcx/ucx/lib/libucp.so.0
+#COPY --from=min_container /opt/hpcx/ucx/lib/libucs.so.0 /opt/hpcx/ucx/lib/libucs.so.0
+#COPY --from=min_container /opt/hpcx/ucx/lib/libuct.so.0 /opt/hpcx/ucx/lib/libuct.so.0
 
-COPY --from=min_container /usr/lib/{libs_arch}-linux-gnu/libcudnn.so.9 /usr/lib/{libs_arch}-linux-gnu/libcudnn.so.9
+#COPY --from=min_container /usr/lib/{libs_arch}-linux-gnu/libcudnn.so.9 /usr/lib/{libs_arch}-linux-gnu/libcudnn.so.9
 
 # patchelf is needed to add deps of libcublasLt.so.12 to libtorch_cuda.so
 RUN apt-get update \\
@@ -1587,17 +1602,18 @@ ENV LD_LIBRARY_PATH /usr/local/cuda/targets/{cuda_arch}-linux/lib:/usr/local/cud
             cuda_arch=cuda_arch, libs_arch=libs_arch
         )
 
-    if "pytorch" in backends:
+# snadampal: skipping the nccl library as I have cleaned up its dependency for cpu only server
+#    if "pytorch" in backends:
         # Add NCCL dependency for pytorch backend.
         # Note: Even though the build is CPU-only, the version of
         # pytorch we are using depends upon the NCCL library.
         # Since this dependency is not present in the ubuntu base image,
         # we must copy it from the Triton min container ourselves.
-        df += """
-COPY --from=min_container /usr/lib/{libs_arch}-linux-gnu/libnccl.so.2 /usr/lib/{libs_arch}-linux-gnu/libnccl.so.2
-""".format(
-            libs_arch=libs_arch
-        )
+#        df += """
+#COPY --from=min_container /usr/lib/{libs_arch}-linux-gnu/libnccl.so.2 /usr/lib/{libs_arch}-linux-gnu/libnccl.so.2
+#""".format(
+#           libs_arch=libs_arch
+#       )
 
     return df
 
@@ -2118,6 +2134,11 @@ def backend_build(
         os.path.join(repo_install_dir, "backends", be),
         os.path.join(install_dir, "backends"),
     )
+
+    if be == "pytorch":
+        if not FLAGS.enable_gpu:
+            cmake_script.cp("-rf /torch_wheel/torch.libs/*", os.path.join(install_dir, "backends", be))
+            cmake_script.cp("-rf /torch_wheel/torch/lib/*", os.path.join(install_dir, "backends", be))
 
     cmake_script.comment()
     cmake_script.comment(f"end '{be}' backend")
@@ -3076,7 +3097,11 @@ if __name__ == "__main__":
             if be == "armnn_tflite":
                 github_organization = "https://gitlab.com/arm-research/smarter/"
             else:
-                github_organization = FLAGS.github_organization
+                if be == "pytorch":
+                    github_organization = "https://github.com/snadampal"
+                    backends[be] = "cpu_only_build"
+                else:
+                    github_organization = FLAGS.github_organization
 
             if be == "vllm":
                 backend_clone(
